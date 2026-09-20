@@ -1,0 +1,24 @@
+{
+  "name": "whatsapp-lives-scheduler-backend",
+  "version": "1.0.0",
+  "description": "Assistente autonomo de lives via WhatsApp com agendamento inteligente",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@supabase/supabase-js": "^2.45.4",
+    "@whiskeysockets/baileys": "^6.7.9",
+    "sql.js": "^1.12.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "helmet": "^8.0.0",
+    "node-cron": "^3.0.3",
+    "pino": "^9.5.0",
+    "qrcode": "^1.5.4"
+  }
+}

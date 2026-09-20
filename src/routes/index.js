@@ -1,0 +1,14 @@
+'use strict';
+const{Router}=require('express'),{apiKeyAuth}=require('../middlewares/auth.middleware'),auth=require('../controllers/auth.controller'),sched=require('../controllers/schedule.controller'),msg=require('../controllers/message.controller'),wa=require('../services/whatsapp.service');
+const router=Router();
+router.use(apiKeyAuth);
+router.get('/status',(req,res)=>res.json({status:wa.getStatus(),serverTime:new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})}));
+router.get('/auth/qr',auth.getQR);
+router.post('/auth/logout',auth.logout);
+router.get('/schedules',sched.list);
+router.post('/schedules',sched.create);
+router.put('/schedules/:id',sched.update);
+router.delete('/schedules/:id',sched.remove);
+router.post('/messages/send-instant',msg.sendInstant);
+router.post('/messages/test-daily',msg.testDailyMessage);
+module.exports=router;

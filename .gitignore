@@ -1,0 +1,7 @@
+auth_info_baileys/
+data/
+logs/
+.env
+node_modules/
+.DS_Store
+Thumbs.db
