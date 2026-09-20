@@ -19,10 +19,21 @@ let reconnectTimeout = null;
 let clearAuthFn = null;
 let onConnectedCallback = null;
 
-function setOnConnectedCallback(fn) { onConnectedCallback = fn; }
-function getStatus() { return connectionStatus; }
-function getQR() { return currentQRBase64; }
-function getSock() { return sock; }
+function setOnConnectedCallback(fn) {
+  onConnectedCallback = fn;
+}
+
+function getStatus() {
+  return connectionStatus;
+}
+
+function getQR() {
+  return currentQRBase64;
+}
+
+function getSock() {
+  return sock;
+}
 
 function normalizeJID(phone) {
   const digits = String(phone).replace(/\D/g, '');
@@ -34,21 +45,31 @@ async function validateAndGetJID(phone) {
   if (!sock || connectionStatus !== 'CONNECTED') {
     throw new Error('WhatsApp não está conectado.');
   }
+
   const jid = normalizeJID(phone);
   const [result] = await sock.onWhatsApp(jid);
+
   if (!result || !result.exists) {
     throw new Error(`Número ${phone} não encontrado no WhatsApp.`);
   }
+
   return result.jid;
 }
 
-async function sendMessage(phone, text) {
+async function sendMessage(phone, text, mentions = []) {
   if (!sock || connectionStatus !== 'CONNECTED') {
-    throw new Error('WhatsApp não conectado.');
+    throw new Error('WhatsApp não conectado. Aguarde a reconexão ou escaneie o QR Code.');
   }
+
   const jid = await validateAndGetJID(phone);
-  await sock.sendMessage(jid, { text });
-  console.log(`[WhatsApp] ✅ Enviado -> ${jid}`);
+  const mentionList = mentions.length > 0 ? mentions : [jid];
+
+  await sock.sendMessage(jid, {
+    text,
+    mentions: mentionList,
+  });
+
+  console.log(`[WhatsApp] ✅ Mensagem enviada para ${jid} (mencionando: ${mentionList.join(', ')})`);
   return jid;
 }
 
@@ -61,7 +82,8 @@ async function connect() {
   connectionStatus = 'CONNECTING';
   currentQRBase64 = null;
 
-  console.log('[WhatsApp] 🔄 Conectando com auth no Supabase...');
+  console.log('[WhatsApp] 🔄 Iniciando conexão com autenticação no Supabase...');
+
   const { state, saveCreds, clearAuth } = await useSupabaseAuthState(supabase);
   clearAuthFn = clearAuth;
 
@@ -88,29 +110,35 @@ async function connect() {
         connectionStatus = 'CONNECTING';
         console.log('[WhatsApp] 📱 QR Code gerado.');
       } catch (err) {
-        console.error('[WhatsApp] Erro QR:', err.message);
+        console.error('[WhatsApp] Erro ao gerar QR Code:', err.message);
       }
     }
 
     if (connection === 'open') {
       connectionStatus = 'CONNECTED';
       currentQRBase64 = null;
-      console.log('[WhatsApp] ✅ Conectado e sessão salva no Supabase!');
-      if (typeof onConnectedCallback === 'function') onConnectedCallback();
+      console.log('[WhatsApp] ✅ Conexão estabelecida e salva no Supabase!');
+
+      if (typeof onConnectedCallback === 'function') {
+        onConnectedCallback();
+      }
     }
 
     if (connection === 'close') {
       connectionStatus = 'DISCONNECTED';
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-      console.log(`[WhatsApp] ❌ Conexão fechada: ${statusCode}`);
+
+      console.log(`[WhatsApp] ❌ Conexão encerrada. Código: ${statusCode}`);
 
       if (isLoggedOut) {
-        console.log('[WhatsApp] 🚪 Logout. Limpando credenciais no Supabase...');
+        console.log('[WhatsApp] 🚪 Logout detectado. Limpando credenciais no Supabase...');
         if (clearAuthFn) await clearAuthFn();
         reconnectTimeout = setTimeout(connect, 1000);
       } else {
-        reconnectTimeout = setTimeout(connect, 5000);
+        const delay = 5000;
+        console.log(`[WhatsApp] 🔁 Reconectando em ${delay / 1000}s...`);
+        reconnectTimeout = setTimeout(connect, delay);
       }
     }
   });
@@ -118,7 +146,9 @@ async function connect() {
 
 async function logout() {
   if (sock) {
-    try { await sock.logout(); } catch (_) {}
+    try {
+      await sock.logout();
+    } catch (_) {}
     sock = null;
   }
   connectionStatus = 'DISCONNECTED';

@@ -74,9 +74,13 @@ function getRandomItem(pool) {
   return pool[randomIndex];
 }
 
-async function buildDailyMessage(period) {
+async function buildDailyMessage(period, phone = null) {
   const lives = await getLivesForToday();
   const dateStr = getTodayFormatted();
+
+  const targetPhone = phone || process.env.OWNER_PHONE;
+  const digits = targetPhone ? String(targetPhone).replace(/\D/g, '') : null;
+  const mentionTag = digits ? `@${digits}` : '';
 
   if (!lives || lives.length === 0) {
     const phrase = period === 'morning'
@@ -85,7 +89,7 @@ async function buildDailyMessage(period) {
 
     if (period === 'morning') {
       return (
-        `🌅 *Bom dia, Guerreiro!*\n\n` +
+        `🌅 *Bom dia, ${mentionTag}!*\n\n` +
         `📅 *${dateStr}*\n\n` +
         `😴 Hoje na sua agenda é dia de *Descanso / Recarregar*.\n` +
         `Aproveita para organizar novas ideias, descansar a voz e renovar a mente!\n\n` +
@@ -94,7 +98,7 @@ async function buildDailyMessage(period) {
       );
     } else {
       return (
-        `🔔 *Lembrete da Tarde*\n\n` +
+        `🔔 *Lembrete da Tarde, ${mentionTag}!*\n\n` +
         `📅 *${dateStr}*\n\n` +
         `☕ Hoje não temos live programada na agenda. Bom momento para relaxar ou jogar algo off-stream!\n\n` +
         `💬 _"${phrase}"_\n\n` +
@@ -123,7 +127,7 @@ async function buildDailyMessage(period) {
     const tip = getRandomItem(MORNING_TIPS);
 
     return (
-      `🌅 *BOM DIA! HORA DE DOMINAR O DIA!*\n` +
+      `🌅 *BOM DIA, ${mentionTag}! HORA DE DOMINAR O DIA!*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `📅 *${dateStr}*\n\n` +
       `🎯 *SUA PROGRAMAÇÃO DE HOJE:*\n\n` +
@@ -138,7 +142,7 @@ async function buildDailyMessage(period) {
     const check = getRandomItem(AFTERNOON_CHECKLIST);
 
     return (
-      `🔔 *ATENÇÃO: SUA LIVE ESTÁ CHEGANDO!*\n` +
+      `🔔 *ATENÇÃO, ${mentionTag}: SUA LIVE ESTÁ CHEGANDO!*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `📅 *${dateStr}*\n\n` +
       `⏳ Faltam poucas horas pro início da transmissão:\n\n` +
