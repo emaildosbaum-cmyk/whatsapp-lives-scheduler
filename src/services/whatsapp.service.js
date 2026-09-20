@@ -36,6 +36,9 @@ function getSock() {
 }
 
 function normalizeJID(phone) {
+  if (String(phone).includes('@g.us')) {
+    return phone;
+  }
   const digits = String(phone).replace(/\D/g, '');
   const withDDI = digits.length <= 11 ? `55${digits}` : digits;
   return `${withDDI}@s.whatsapp.net`;
@@ -46,9 +49,17 @@ async function validateAndGetJID(phone) {
     throw new Error('WhatsApp não está conectado.');
   }
 
-  const jid = normalizeJID(phone);
-  const [result] = await sock.onWhatsApp(jid);
+  if (String(phone).includes('@g.us')) {
+    return phone;
+  }
 
+  const jid = normalizeJID(phone);
+  const myJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : null;
+  if (myJid && jid.includes(myJid.split('@')[0])) {
+    return myJid;
+  }
+
+  const [result] = await sock.onWhatsApp(jid);
   if (!result || !result.exists) {
     throw new Error(`Número ${phone} não encontrado no WhatsApp.`);
   }
@@ -56,20 +67,18 @@ async function validateAndGetJID(phone) {
   return result.jid;
 }
 
-async function sendMessage(phone, text, mentions = []) {
+async function sendMessage(phone, text) {
   if (!sock || connectionStatus !== 'CONNECTED') {
     throw new Error('WhatsApp não conectado. Aguarde a reconexão ou escaneie o QR Code.');
   }
 
   const jid = await validateAndGetJID(phone);
-  const mentionList = mentions.length > 0 ? mentions : [jid];
 
   await sock.sendMessage(jid, {
     text,
-    mentions: mentionList,
   });
 
-  console.log(`[WhatsApp] ✅ Mensagem enviada para ${jid} (mencionando: ${mentionList.join(', ')})`);
+  console.log(`[WhatsApp] ✅ Mensagem enviada para ${jid}`);
   return jid;
 }
 
@@ -94,9 +103,11 @@ async function connect() {
     logger: baileysLogger,
     printQRInTerminal: false,
     auth: state,
-    browser: ['Lives Scheduler Cloud', 'Chrome', '120.0.0'],
-    connectTimeoutMs: 30_000,
-    defaultQueryTimeoutMs: 20_000,
+    browser: ['Ubuntu', 'Chrome', '124.0.0'],
+    syncFullHistory: true,
+    connectTimeoutMs: 60_000,
+    defaultQueryTimeoutMs: 30_000,
+    keepAliveIntervalMs: 25_000,
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -117,7 +128,7 @@ async function connect() {
     if (connection === 'open') {
       connectionStatus = 'CONNECTED';
       currentQRBase64 = null;
-      console.log('[WhatsApp] ✅ Conexão estabelecida e salva no Supabase!');
+      console.log(`[WhatsApp] ✅ Conectado como ${sock.user?.id || 'usuário'}! Sessão ativa no Supabase.`);
 
       if (typeof onConnectedCallback === 'function') {
         onConnectedCallback();
