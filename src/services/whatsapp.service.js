@@ -1,47 +1,140 @@
 'use strict';
-const{default:makeWASocket,useMultiFileAuthState,DisconnectReason,fetchLatestBaileysVersion}=require('@whiskeysockets/baileys');
-const pino=require('pino'),QRCode=require('qrcode'),fs=require('fs'),path=require('path');
-const AUTH_DIR=path.join(__dirname,'../../auth_info_baileys');
-const LOGS_DIR=path.join(__dirname,'../../logs');
-if(!fs.existsSync(AUTH_DIR))fs.mkdirSync(AUTH_DIR,{recursive:true});
-if(!fs.existsSync(LOGS_DIR))fs.mkdirSync(LOGS_DIR,{recursive:true});
-const logger=pino({level:'error'});
-let sock=null,connectionStatus='DISCONNECTED',currentQRBase64=null,reconnectTimeout=null,onConnectedCallback=null;
-function setOnConnectedCallback(fn){onConnectedCallback=fn;}
-function getStatus(){return connectionStatus;}
-function getQR(){return currentQRBase64;}
-function getSock(){return sock;}
-function normalizeJID(phone){const d=String(phone).replace(/\D/g,'');return`${d.length<=11?'55'+d:d}@s.whatsapp.net`;}
-async function validateAndGetJID(phone){
-  if(!sock||connectionStatus!=='CONNECTED')throw new Error('WA nao conectado.');
-  const jid=normalizeJID(phone),[r]=await sock.onWhatsApp(jid);
-  if(!r||!r.exists)throw new Error(`Numero ${phone} nao encontrado.`);
-  return r.jid;
+
+const {
+  default: makeWASocket,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+} = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const QRCode = require('qrcode');
+const { supabase } = require('./supabase.service');
+const { useSupabaseAuthState } = require('./supabase-auth.service');
+
+const baileysLogger = pino({ level: 'error' });
+
+let sock = null;
+let connectionStatus = 'DISCONNECTED';
+let currentQRBase64 = null;
+let reconnectTimeout = null;
+let clearAuthFn = null;
+let onConnectedCallback = null;
+
+function setOnConnectedCallback(fn) { onConnectedCallback = fn; }
+function getStatus() { return connectionStatus; }
+function getQR() { return currentQRBase64; }
+function getSock() { return sock; }
+
+function normalizeJID(phone) {
+  const digits = String(phone).replace(/\D/g, '');
+  const withDDI = digits.length <= 11 ? `55${digits}` : digits;
+  return `${withDDI}@s.whatsapp.net`;
 }
-async function sendMessage(phone,text){
-  if(!sock||connectionStatus!=='CONNECTED')throw new Error('WA nao conectado.');
-  const jid=await validateAndGetJID(phone);
-  await sock.sendMessage(jid,{text});console.log(`[WA] -> ${jid}`);
+
+async function validateAndGetJID(phone) {
+  if (!sock || connectionStatus !== 'CONNECTED') {
+    throw new Error('WhatsApp não está conectado.');
+  }
+  const jid = normalizeJID(phone);
+  const [result] = await sock.onWhatsApp(jid);
+  if (!result || !result.exists) {
+    throw new Error(`Número ${phone} não encontrado no WhatsApp.`);
+  }
+  return result.jid;
+}
+
+async function sendMessage(phone, text) {
+  if (!sock || connectionStatus !== 'CONNECTED') {
+    throw new Error('WhatsApp não conectado.');
+  }
+  const jid = await validateAndGetJID(phone);
+  await sock.sendMessage(jid, { text });
+  console.log(`[WhatsApp] ✅ Enviado -> ${jid}`);
   return jid;
 }
-function clearAuthFiles(){if(fs.existsSync(AUTH_DIR))fs.readdirSync(AUTH_DIR).forEach(f=>fs.unlinkSync(path.join(AUTH_DIR,f)));}
-async function connect(){
-  if(reconnectTimeout){clearTimeout(reconnectTimeout);reconnectTimeout=null;}
-  connectionStatus='CONNECTING';currentQRBase64=null;
-  console.log('[WA] Iniciando...');
-  const{state,saveCreds}=await useMultiFileAuthState(AUTH_DIR);
-  const{version}=await fetchLatestBaileysVersion();
-  sock=makeWASocket({version,logger,printQRInTerminal:false,auth:state,browser:['LivesSched','Chrome','120.0.0'],connectTimeoutMs:30000,defaultQueryTimeoutMs:20000});
-  sock.ev.on('creds.update',saveCreds);
-  sock.ev.on('connection.update',async({connection,lastDisconnect,qr})=>{
-    if(qr){try{currentQRBase64=await QRCode.toDataURL(qr);connectionStatus='CONNECTING';console.log('[WA] QR gerado.');}catch(e){console.error('[WA] QR err:',e.message);}}
-    if(connection==='open'){connectionStatus='CONNECTED';currentQRBase64=null;console.log('[WA] Conectado!');if(typeof onConnectedCallback==='function')onConnectedCallback();}
-    if(connection==='close'){connectionStatus='DISCONNECTED';const code=lastDisconnect?.error?.output?.statusCode;console.log(`[WA] Fechado. code:${code}`);if(code===DisconnectReason.loggedOut){clearAuthFiles();reconnectTimeout=setTimeout(connect,1000);}else reconnectTimeout=setTimeout(connect,5000);}
+
+async function connect() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+
+  connectionStatus = 'CONNECTING';
+  currentQRBase64 = null;
+
+  console.log('[WhatsApp] 🔄 Conectando com auth no Supabase...');
+  const { state, saveCreds, clearAuth } = await useSupabaseAuthState(supabase);
+  clearAuthFn = clearAuth;
+
+  const { version } = await fetchLatestBaileysVersion();
+
+  sock = makeWASocket({
+    version,
+    logger: baileysLogger,
+    printQRInTerminal: false,
+    auth: state,
+    browser: ['Lives Scheduler Cloud', 'Chrome', '120.0.0'],
+    connectTimeoutMs: 30_000,
+    defaultQueryTimeoutMs: 20_000,
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      try {
+        currentQRBase64 = await QRCode.toDataURL(qr);
+        connectionStatus = 'CONNECTING';
+        console.log('[WhatsApp] 📱 QR Code gerado.');
+      } catch (err) {
+        console.error('[WhatsApp] Erro QR:', err.message);
+      }
+    }
+
+    if (connection === 'open') {
+      connectionStatus = 'CONNECTED';
+      currentQRBase64 = null;
+      console.log('[WhatsApp] ✅ Conectado e sessão salva no Supabase!');
+      if (typeof onConnectedCallback === 'function') onConnectedCallback();
+    }
+
+    if (connection === 'close') {
+      connectionStatus = 'DISCONNECTED';
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      console.log(`[WhatsApp] ❌ Conexão fechada: ${statusCode}`);
+
+      if (isLoggedOut) {
+        console.log('[WhatsApp] 🚪 Logout. Limpando credenciais no Supabase...');
+        if (clearAuthFn) await clearAuthFn();
+        reconnectTimeout = setTimeout(connect, 1000);
+      } else {
+        reconnectTimeout = setTimeout(connect, 5000);
+      }
+    }
   });
 }
-async function logout(){
-  if(sock){try{await sock.logout();}catch(_){}sock=null;}
-  connectionStatus='DISCONNECTED';currentQRBase64=null;clearAuthFiles();
-  reconnectTimeout=setTimeout(connect,1000);
+
+async function logout() {
+  if (sock) {
+    try { await sock.logout(); } catch (_) {}
+    sock = null;
+  }
+  connectionStatus = 'DISCONNECTED';
+  currentQRBase64 = null;
+  if (clearAuthFn) await clearAuthFn();
+  reconnectTimeout = setTimeout(connect, 1000);
 }
-module.exports={connect,logout,sendMessage,normalizeJID,validateAndGetJID,getStatus,getQR,getSock,setOnConnectedCallback};
+
+module.exports = {
+  connect,
+  logout,
+  sendMessage,
+  normalizeJID,
+  validateAndGetJID,
+  getStatus,
+  getQR,
+  getSock,
+  setOnConnectedCallback,
+};
