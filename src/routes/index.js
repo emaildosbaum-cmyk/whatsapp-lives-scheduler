@@ -6,6 +6,7 @@ const authController = require('../controllers/auth.controller');
 const scheduleController = require('../controllers/schedule.controller');
 const messageController = require('../controllers/message.controller');
 const whatsapp = require('../services/whatsapp.service');
+const { getDailyTargetConfig, setDailyTargetConfig } = require('../services/supabase.service');
 
 const router = Router();
 
@@ -17,6 +18,28 @@ router.get('/status', (req, res) => {
     status: whatsapp.getStatus(),
     serverTime: now,
   });
+});
+
+router.get('/config/target', async (req, res) => {
+  try {
+    const config = await getDailyTargetConfig();
+    res.json({ config });
+  } catch (err) {
+    res.status(500).json({ error: 'Falha ao buscar configuração.' });
+  }
+});
+
+router.post('/config/target', async (req, res) => {
+  try {
+    const { mode, groupId, groupName } = req.body;
+    if (!mode || (mode === 'group' && !groupId)) {
+      return res.status(400).json({ error: 'Dados inválidos para destino das lives.' });
+    }
+    const saved = await setDailyTargetConfig({ mode, groupId, groupName });
+    res.json({ success: true, config: saved });
+  } catch (err) {
+    res.status(500).json({ error: 'Falha ao salvar configuração.' });
+  }
 });
 
 router.get('/groups', async (req, res) => {

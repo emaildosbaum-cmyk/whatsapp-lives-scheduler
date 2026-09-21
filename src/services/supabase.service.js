@@ -41,6 +41,36 @@ function getTodayFormatted() {
   });
 }
 
+async function getDailyTargetConfig() {
+  try {
+    const { data } = await supabase
+      .from('whatsapp_config')
+      .select('value')
+      .eq('key', 'daily_target')
+      .single();
+
+    if (data?.value) return data.value;
+  } catch (err) {
+    console.warn('[SupabaseService] Falha daily_target:', err.message);
+  }
+  return { mode: 'direct', groupId: null, groupName: null };
+}
+
+async function setDailyTargetConfig(config) {
+  const { data, error } = await supabase
+    .from('whatsapp_config')
+    .upsert({
+      key: 'daily_target',
+      value: config,
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data.value;
+}
+
 async function listSchedulesFromSupabase() {
   const { data, error } = await supabase
     .from('whatsapp_schedules')
@@ -105,6 +135,8 @@ module.exports = {
   getTodayLabel,
   getTodayFormatted,
   getWeekdayIndexSP,
+  getDailyTargetConfig,
+  setDailyTargetConfig,
   listSchedulesFromSupabase,
   getActiveSchedulesFromSupabase,
   createScheduleInSupabase,

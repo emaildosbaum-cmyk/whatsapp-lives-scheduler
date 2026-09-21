@@ -6,7 +6,8 @@ const { buildDailyMessage } = require('./message.builder');
 const {
   getActiveSchedulesFromSupabase,
   updateScheduleInSupabase,
-  logDeliveryInSupabase
+  logDeliveryInSupabase,
+  getDailyTargetConfig,
 } = require('./supabase.service');
 
 const TIMEZONE = process.env.TIMEZONE || 'America/Sao_Paulo';
@@ -17,24 +18,29 @@ const MORNING_TASK_ID = '__owner_morning__';
 const AFTERNOON_TASK_ID = '__owner_afternoon__';
 
 async function fireOwnerMessage(period) {
-  if (!OWNER_PHONE) return;
   if (whatsapp.getStatus() !== 'CONNECTED') {
-    await logDeliveryInSupabase({
-      recipient: OWNER_PHONE,
-      message: `[Live Reminder - ${period}] WhatsApp Desconectado`,
-      status: 'FAILED',
-      error: 'WhatsApp socket not connected',
-    });
+    console.warn(`[Scheduler] ⚠️ Cron ${period} disparou mas WhatsApp está desconectado.`);
     return;
   }
+
+  const config = await getDailyTargetConfig();
+  const targetRecipient = (config.mode === 'group' && config.groupId)
+    ? config.groupId
+    : OWNER_PHONE;
+
+  if (!targetRecipient) {
+    console.warn('[Scheduler] ⚠️ Nenhum destinatário configurado.');
+    return;
+  }
+
   try {
-    const message = await buildDailyMessage(period);
-    await whatsapp.sendMessage(OWNER_PHONE, message);
-    await logDeliveryInSupabase({ recipient: OWNER_PHONE, message, status: 'SUCCESS' });
-    console.log(`[Scheduler] ✅ Mensagem ${period} enviada.`);
+    const message = await buildDailyMessage(period, targetRecipient);
+    await whatsapp.sendMessage(targetRecipient, message);
+    await logDeliveryInSupabase({ recipient: targetRecipient, message, status: 'SUCCESS' });
+    console.log(`[Scheduler] ✅ Mensagem ${period} enviada para ${targetRecipient} (modo: ${config.mode}).`);
   } catch (err) {
     console.error(`[Scheduler] ❌ Erro ${period}:`, err.message);
-    await logDeliveryInSupabase({ recipient: OWNER_PHONE, message: `[Live - ${period}]`, status: 'FAILED', error: err.message });
+    await logDeliveryInSupabase({ recipient: targetRecipient, message: `[Live - ${period}]`, status: 'FAILED', error: err.message });
   }
 }
 
