@@ -37,7 +37,7 @@ function getSock() {
 
 function normalizeJID(phone) {
   if (String(phone).includes('@g.us')) {
-    return phone;
+    return String(phone).trim();
   }
   const digits = String(phone).replace(/\D/g, '');
   const withDDI = digits.length <= 11 ? `55${digits}` : digits;
@@ -50,14 +50,10 @@ async function validateAndGetJID(phone) {
   }
 
   if (String(phone).includes('@g.us')) {
-    return phone;
+    return String(phone).trim();
   }
 
   const jid = normalizeJID(phone);
-  const myJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : null;
-  if (myJid && jid.includes(myJid.split('@')[0])) {
-    return myJid;
-  }
 
   const [result] = await sock.onWhatsApp(jid);
   if (!result || !result.exists) {
@@ -65,6 +61,27 @@ async function validateAndGetJID(phone) {
   }
 
   return result.jid;
+}
+
+async function getParticipatingGroups() {
+  if (!sock || connectionStatus !== 'CONNECTED') {
+    throw new Error('WhatsApp não está conectado.');
+  }
+
+  try {
+    const groupData = await sock.groupFetchAllParticipating();
+    const list = Object.values(groupData).map(g => ({
+      id: g.id,
+      subject: g.subject,
+      creation: g.creation,
+      desc: g.desc ? g.desc.toString() : null,
+      participantsCount: g.participants?.length || 0,
+    }));
+    return list;
+  } catch (err) {
+    console.error('[WhatsApp] Erro ao buscar grupos:', err.message);
+    throw err;
+  }
 }
 
 async function sendMessage(phone, text) {
@@ -174,6 +191,7 @@ module.exports = {
   sendMessage,
   normalizeJID,
   validateAndGetJID,
+  getParticipatingGroups,
   getStatus,
   getQR,
   getSock,
